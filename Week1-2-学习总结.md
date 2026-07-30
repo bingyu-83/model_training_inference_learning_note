@@ -22,6 +22,8 @@ cssclasses: [max]
 
 **HBM 带宽比算力更稀缺。** H100 的 FP16 算力是 990 TFLOPS，但 HBM 带宽只有 3.35 TB/s。一个简单的矩阵乘法，理论上需要的带宽远超实际可用带宽，这就是为什么大多数 kernel 是 memory-bound 而不是 compute-bound。Roofline 模型把这个关系说得很清楚——拐点左边优化内存访问，拐点右边才轮到优化算法。
 
+> 📎 深度展开：[Sidenote — HBM 带宽与 Roofline 模型](./Sidenote-HBM带宽与Roofline模型.md)（含算术强度推导、拐点计算、Kernel Fusion 原理、Flash Attention 分析，以及[交互式 Roofline 可视化](./roofline-visualization.html)）
+
 **NVLink 和 PCIe 的差距不是量变是质变。** H100 的 NVLink 4 是 900 GB/s，PCIe Gen5 是 64 GB/s，差了 14 倍。这不只是数字，它意味着 TP（张量并行）必须在节点内做，跨节点做 TP 在工程上几乎不可行，因为延迟和带宽都撑不住。这个认知直接影响了我对并行策略选择的理解。
 
 **Fabric Manager 是一个容易被忽视的单点故障。** 它是用户空间的守护进程，不是内核驱动。`nvidia-smi` 能正常跑不代表 NVSwitch 已经初始化。见过一个典型场景：节点重启后 Fabric Manager 没有自动启动，`nvidia-smi` 显示 8 张卡全部正常，但 NCCL 跑出来的 busbw 只有 3 GB/s，因为通信全部 fallback 到 TCP 了。这种问题如果不知道 Fabric Manager 的存在，排查方向会完全跑偏。
