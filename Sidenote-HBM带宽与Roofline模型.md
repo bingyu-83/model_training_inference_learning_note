@@ -106,18 +106,27 @@ Roofline 是一个性能上界模型，给定硬件参数，任何 kernel 的性
 
 ### 图形结构
 
+> 📊 **交互式可视化**：[在浏览器中打开 Roofline 图](./roofline-visualization.html)
+>
+> 图中包含：H100 Roofline 曲线、拐点标注（296 FLOP/Byte）、6 个典型 LLM kernel 的实际位置（KV Cache / Softmax / LayerNorm / GEMV / Flash Attention / 大批量 GEMM），以及 memory-bound / compute-bound 区域划分。
+
+下载 repo 后用浏览器打开 `roofline-visualization.html` 即可查看，效果如下所示：
+
 ```
-性能 (TFLOPS)
+性能 (TFLOPS，对数坐标)
    │
-990├────────────────────────────── 峰值算力（水平天花板）
-   │                      ╱‾‾‾‾‾‾‾
-   │                   ╱  ← 拐点 ~296 FLOP/Byte
-   │                ╱
-   │             ╱   斜率 = HBM 带宽 3.35 TB/s
-   │          ╱
-   │       ╱
-   └───────────────────────────────→ 算术强度 (FLOP/Byte)
-          memory-bound  │  compute-bound
+990├ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─  ← 峰值算力天花板（水平线）
+   │                        ● GEMM（compute-bound，绿色）
+   │                    ╱‾‾‾
+   │                ╱ ← 拐点 296 FLOP/Byte（黄色高亮）
+   │         ● Flash Attn（橙色，接近拐点）
+   │      ● GEMV
+   │   ● LayerNorm
+   │ ● Softmax
+   ● KV Cache（最左，memory-bound 最严重，红色）
+   └────────────────────────────────→ 算术强度 (FLOP/Byte，对数坐标)
+        1       10      100     1000
+        ←── memory-bound ──│── compute-bound ──→
 ```
 
 ### 拐点（Ridge Point）计算

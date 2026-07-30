@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Roofline 模型可视化</title>
+<style>
+  body { background: #1a1a2e; color: #e0e0e0; font-family: 'Helvetica Neue', sans-serif; margin: 0; padding: 20px; }
+  h1 { text-align: center; color: #a78bfa; font-size: 22px; margin-bottom: 4px; }
+  .subtitle { text-align: center; color: #888; font-size: 13px; margin-bottom: 24px; }
+  .container { display: flex; gap: 24px; max-width: 1100px; margin: 0 auto; }
+  canvas { background: #0f0f1a; border-radius: 12px; border: 1px solid #333; }
+  .panel { flex: 1; display: flex; flex-direction: column; gap: 14px; }
+  .card { background: #16213e; border-radius: 10px; padding: 14px 16px; border-left: 3px solid #a78bfa; }
+  .card h3 { margin: 0 0 8px 0; font-size: 13px; color: #a78bfa; text-transform: uppercase; letter-spacing: 1px; }
+  .card p { margin: 0; font-size: 13px; line-height: 1.7; color: #ccc; }
+  .kernels { display: flex; flex-direction: column; gap: 8px; }
+  .kernel-row { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .tag { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: bold; }
+  .mem { background: #ff6b6b22; color: #ff6b6b; border: 1px solid #ff6b6b55; }
+  .cmp { background: #51cf6622; color: #51cf66; border: 1px solid #51cf6655; }
+  .formula { background: #0f0f1a; border-radius: 8px; padding: 10px 14px; font-family: monospace; font-size: 13px; color: #ffd43b; text-align: center; margin-top: 4px; }
+  .legend { display: flex; gap: 16px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #aaa; }
+  .legend-line { width: 24px; height: 3px; border-radius: 2px; }
+</style>
+</head>
+<body>
+<h1>Roofline 模型 — H100 SXM5</h1>
+<p class="subtitle">理解为什么大多数 LLM kernel 是 memory-bound，而不是 compute-bound</p>
+
+<div class="container">
+  <div>
+    <canvas id="roofline" width="620" height="440"></canvas>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-line" style="background:#a78bfa;"></div> Roofline 上限</div>
+      <div class="legend-item"><div class="dot" style="background:#ff6b6b;"></div> Memory-bound kernel</div>
+      <div class="legend-item"><div class="dot" style="background:#51cf66;"></div> Compute-bound kernel</div>
+      <div class="legend-item"><div class="dot" style="background:#ffd43b; width:12px;height:12px;"></div> 拐点 Ridge Point</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="card">
+      <h3>H100 关键参数</h3>
+      <div class="formula">拐点 = 990 TFLOPS ÷ 3.35 TB/s ≈ 296 FLOP/Byte</div>
+      <p style="margin-top:10px;">左边斜线斜率 = HBM 带宽 3.35 TB/s<br>水平天花板 = 峰值算力 990 TFLOPS<br>拐点右边：Tensor Core 跑满，加数据没用<br>拐点左边：带宽是瓶颈，算力在空等</p>
+    </div>
+
+    <div class="card">
+      <h3>典型 Kernel 位置</h3>
+      <div class="kernels">
+        <div class="kernel-row"><div class="dot" style="background:#ff6b6b"></div><span style="width:140px">Softmax / LayerNorm</span><span style="color:#888;flex:1">~3 FLOP/Byte</span><span class="tag mem">memory</span></div>
+        <div class="kernel-row"><div class="dot" style="background:#ff6b6b"></div><span style="width:140px">KV Cache 读取</span><span style="color:#888;flex:1">~1 FLOP/Byte</span><span class="tag mem">memory</span></div>
+        <div class="kernel-row"><div class="dot" style="background:#ff6b6b"></div><span style="width:140px">Elementwise ops</span><span style="color:#888;flex:1">~1 FLOP/Byte</span><span class="tag mem">memory</span></div>
+        <div class="kernel-row"><div class="dot" style="background:#ff6b6b"></div><span style="width:140px">GEMV（decode推理）</span><span style="color:#888;flex:1">~N/2 FLOP/Byte</span><span class="tag mem">memory</span></div>
+        <div class="kernel-row"><div class="dot" style="background:#ffa94d"></div><span style="width:140px">Flash Attention</span><span style="color:#888;flex:1">~100 FLOP/Byte</span><span class="tag" style="background:#ffa94d22;color:#ffa94d;border:1px solid #ffa94d55">接近拐点</span></div>
+        <div class="kernel-row"><div class="dot" style="background:#51cf66"></div><span style="width:140px">大批量 GEMM</span><span style="color:#888;flex:1">&gt;1000 FLOP/Byte</span><span class="tag cmp">compute</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>优化方向</h3>
+      <p>
+        <span style="color:#ff6b6b">● 拐点左边（memory-bound）</span><br>
+        减少 HBM 读写次数<br>
+        → Kernel Fusion，把中间结果留在 SRAM<br>
+        → Flash Attention 分块，不写回整个矩阵<br>
+        → 量化（FP8/INT4），同带宽搬更多数<br><br>
+        <span style="color:#51cf66">● 拐点右边（compute-bound）</span><br>
+        提高 Tensor Core 利用率<br>
+        → 更大 tile size，减少 warp 空转<br>
+        → 低精度（FP8 算力是 FP16 的 2×）
+      </p>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('roofline');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+// 坐标系参数
+const pad = { left: 70, right: 30, top: 40, bottom: 60 };
+const plotW = W - pad.left - pad.right;
+const plotH = H - pad.top - pad.bottom;
+
+// H100 参数（对数坐标）
+const PEAK_FLOPS = 990;   // TFLOPS
+const BANDWIDTH = 3.35;   // TB/s
+const RIDGE = PEAK_FLOPS / BANDWIDTH; // ~296 FLOP/Byte
+
+// 对数坐标范围
+const xMin = 0.5, xMax = 3000;   // FLOP/Byte
+const yMin = 0.5, yMax = 3000;   // TFLOPS
+
+function toLog(val, min, max, size) {
+  return (Math.log10(val) - Math.log10(min)) / (Math.log10(max) - Math.log10(min)) * size;
+}
+
+function cx(x) { return pad.left + toLog(x, xMin, xMax, plotW); }
+function cy(y) { return pad.top + plotH - toLog(y, yMin, yMax, plotH); }
+
+// 背景
+ctx.fillStyle = '#0f0f1a';
+ctx.fillRect(0, 0, W, H);
+
+// 网格
+ctx.strokeStyle = '#1e1e3a';
+ctx.lineWidth = 1;
+[1, 10, 100, 1000].forEach(v => {
+  // x 网格
+  ctx.beginPath(); ctx.moveTo(cx(v), pad.top); ctx.lineTo(cx(v), pad.top + plotH); ctx.stroke();
+  // y 网格
+  ctx.beginPath(); ctx.moveTo(pad.left, cy(v)); ctx.lineTo(pad.left + plotW, cy(v)); ctx.stroke();
+});
+
+// Roofline 曲线
+ctx.beginPath();
+ctx.strokeStyle = '#a78bfa';
+ctx.lineWidth = 3;
+ctx.shadowColor = '#a78bfa';
+ctx.shadowBlur = 8;
+
+// memory-bound 段（斜线）
+ctx.moveTo(cx(xMin), cy(xMin * BANDWIDTH));
+ctx.lineTo(cx(RIDGE), cy(PEAK_FLOPS));
+// compute-bound 段（水平线）
+ctx.lineTo(cx(xMax), cy(PEAK_FLOPS));
+ctx.stroke();
+ctx.shadowBlur = 0;
+
+// 拐点竖虚线
+ctx.beginPath();
+ctx.strokeStyle = '#ffd43b66';
+ctx.lineWidth = 1.5;
+ctx.setLineDash([5, 4]);
+ctx.moveTo(cx(RIDGE), cy(PEAK_FLOPS));
+ctx.lineTo(cx(RIDGE), pad.top + plotH);
+ctx.stroke();
+ctx.setLineDash([]);
+
+// kernel 点（先画，拐点后画压在最上层）
+const kernels = [
+  { name: 'KV Cache',   x: 1,    y: 1 * BANDWIDTH,    color: '#ff6b6b', lx: 10,  ly: -12 },
+  { name: 'Softmax',    x: 3,    y: 3 * BANDWIDTH,    color: '#ff6b6b', lx: 10,  ly: -12 },
+  { name: 'LayerNorm',  x: 5,    y: 5 * BANDWIDTH,    color: '#ff6b6b', lx: 10,  ly:  16 },
+  { name: 'GEMV',       x: 30,   y: 30 * BANDWIDTH,   color: '#ff6b6b', lx: 10,  ly: -12 },
+  { name: 'Flash Attn', x: 100,  y: 100 * BANDWIDTH,  color: '#ffa94d', lx: 10,  ly: -12 },
+  { name: 'GEMM\n(大批量矩阵乘)', x: 1500, y: PEAK_FLOPS, color: '#51cf66', lx: -70, ly: 22 },
+];
+
+kernels.forEach(k => {
+  const px = cx(k.x);
+  const py = cy(Math.min(k.y, PEAK_FLOPS));
+
+  ctx.beginPath();
+  ctx.arc(px, py, 10, 0, Math.PI * 2);
+  ctx.fillStyle = k.color + '33';
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(px, py, 6, 0, Math.PI * 2);
+  ctx.fillStyle = k.color;
+  ctx.shadowColor = k.color;
+  ctx.shadowBlur = 10;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = k.color;
+  ctx.font = '11px Helvetica Neue';
+  ctx.textAlign = 'left';
+  k.name.split('\n').forEach((line, i) => {
+    ctx.fillText(line, px + k.lx, py + k.ly + i * 14);
+  });
+});
+
+// 拐点（最后画，确保在最上层）
+ctx.beginPath();
+ctx.arc(cx(RIDGE), cy(PEAK_FLOPS), 10, 0, Math.PI * 2);
+ctx.fillStyle = '#ffd43b44';
+ctx.fill();
+ctx.beginPath();
+ctx.arc(cx(RIDGE), cy(PEAK_FLOPS), 7, 0, Math.PI * 2);
+ctx.fillStyle = '#ffd43b';
+ctx.shadowColor = '#ffd43b';
+ctx.shadowBlur = 16;
+ctx.fill();
+ctx.shadowBlur = 0;
+
+// 拐点标注框（左上方，避开水平线）
+const rpx = cx(RIDGE);
+const rpy = cy(PEAK_FLOPS);
+const boxX = rpx - 145;
+const boxY = rpy - 68;
+ctx.fillStyle = '#1a1a2e';
+ctx.strokeStyle = '#ffd43b88';
+ctx.lineWidth = 1.5;
+ctx.beginPath();
+ctx.roundRect(boxX, boxY, 138, 52, 6);
+ctx.fill();
+ctx.stroke();
+
+// 引导线
+ctx.beginPath();
+ctx.strokeStyle = '#ffd43b66';
+ctx.lineWidth = 1;
+ctx.setLineDash([3, 3]);
+ctx.moveTo(rpx, rpy - 7);
+ctx.lineTo(boxX + 138, boxY + 52);
+ctx.stroke();
+ctx.setLineDash([]);
+
+ctx.textAlign = 'left';
+ctx.fillStyle = '#ffd43b';
+ctx.font = 'bold 12px Helvetica Neue';
+ctx.fillText('拐点 Ridge Point', boxX + 10, boxY + 20);
+ctx.fillStyle = '#ffd43bbb';
+ctx.font = '11px Helvetica Neue';
+ctx.fillText('296 FLOP/Byte', boxX + 10, boxY + 38);
+
+// 区域标注
+ctx.font = 'bold 13px Helvetica Neue';
+ctx.textAlign = 'left';
+ctx.fillStyle = '#ff6b6b88';
+ctx.fillText('← memory-bound', cx(1.2), cy(1.5));
+ctx.fillStyle = '#51cf6688';
+ctx.fillText('compute-bound →', cx(400), cy(1.5));
+
+// 峰值算力标注
+ctx.fillStyle = '#a78bfaaa';
+ctx.font = '11px Helvetica Neue';
+ctx.textAlign = 'left';
+ctx.fillText('峰值算力 990 TFLOPS', cx(1.2), cy(PEAK_FLOPS * 1.15));
+
+// 坐标轴
+ctx.strokeStyle = '#555';
+ctx.lineWidth = 1.5;
+ctx.beginPath();
+ctx.moveTo(pad.left, pad.top);
+ctx.lineTo(pad.left, pad.top + plotH);
+ctx.lineTo(pad.left + plotW, pad.top + plotH);
+ctx.stroke();
+
+// 坐标轴刻度和标签
+ctx.fillStyle = '#888';
+ctx.font = '11px Helvetica Neue';
+ctx.textAlign = 'center';
+[1, 10, 100, 1000].forEach(v => {
+  ctx.fillText(v, cx(v), pad.top + plotH + 18);
+});
+ctx.textAlign = 'right';
+[1, 10, 100, 1000].forEach(v => {
+  ctx.fillText(v, pad.left - 8, cy(v) + 4);
+});
+
+// 轴标题
+ctx.fillStyle = '#aaa';
+ctx.font = '13px Helvetica Neue';
+ctx.textAlign = 'center';
+ctx.fillText('算术强度（FLOP / Byte）', pad.left + plotW / 2, H - 8);
+
+ctx.save();
+ctx.translate(16, pad.top + plotH / 2);
+ctx.rotate(-Math.PI / 2);
+ctx.fillText('性能（TFLOPS）', 0, 0);
+ctx.restore();
+</script>
+</body>
+</html>
