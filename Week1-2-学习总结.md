@@ -4,6 +4,7 @@ tags: [GPU, NVIDIA, NCCL, NVLink, architecture, ramp-up, AWS, GCP]
 category: GCP
 status: active
 date: 2026-07-19
+updated: 2026-07-31
 type: 学习总结
 cssclasses: [max]
 ---
@@ -65,7 +66,7 @@ nccl-tests busbw > 600 GB/s → 通信路径正确走了 NVLink
 
 ---
 
-## 四、NCCL：不只是"通信库"
+## 四、NCCL：不只是"通信库" `🆕 2026-07-31`
 
 NCCL 的定位经常被低估。它不只是封装了几个通信原语的库，它做的事情是**在给定拓扑下自动选择最优传输路径和算法**。
 
@@ -135,7 +136,7 @@ nvidia-smi nvlink -e
 
 ---
 
-## 七、KV Cache 与推理框架：两条优化路线
+## 七、KV Cache 与推理框架：两条优化路线 `🆕 2026-07-31`
 
 理解 KV Cache 之后，vLLM 和 SGLang 的差异就变得很清晰——它们解决的是两个不同层次的问题。
 
@@ -165,8 +166,8 @@ nvidia-smi nvlink -e
 
 ## 九、一句话总结每个核心概念
 
-| 概念 | 一句话本质 |
-|------|-----------|
+| 概念 | 一句话本质 | |
+|------|-----------|-|
 | SM | GPU 的基本计算单元，每个 SM 独立调度，共享 L2 |
 | Tensor Core | 专门做矩阵乘法的硬件，每代支持更低精度 |
 | HBM | 堆叠式高带宽内存，容量小但带宽是 DDR 的 10 倍以上 |
@@ -181,6 +182,6 @@ nvidia-smi nvlink -e
 | Roofline | 判断 kernel 是 memory-bound 还是 compute-bound 的模型 |
 | Kernel Fusion | 把多个 kernel 合并，减少 HBM 读写次数 |
 | TCPDirect / TCPXO | GCP 的节点间网络协议，逐代减少 CPU 参与 |
-| PagedAttention | vLLM 的 KV Cache 分页管理，消除显存碎片，利用率 96%+ |
-| RadixAttention | SGLang 的跨请求 KV Cache 复用，前缀树索引，共享前缀场景快 4-6x |
-| MoE Token Dispatch | MoE 推理中 token 路由到专家的 All-to-All 通信，动态不均衡 |
+| PagedAttention | vLLM 的 KV Cache 分页管理，消除显存碎片，利用率 96%+ | 🆕 |
+| RadixAttention | SGLang 的跨请求 KV Cache 复用，前缀树索引，共享前缀场景快 4-6x | 🆕 |
+| MoE Token Dispatch | MoE 推理中 token 路由到专家的 All-to-All 通信，动态不均衡 | 🆕 |
