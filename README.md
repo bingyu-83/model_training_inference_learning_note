@@ -14,21 +14,21 @@ All referenced materials are sourced from publicly available resources.
 
 ## Files in This Repo
 
-### Week1-2-学习总结.md
-
-A retrospective written after completing Week 1-2 of the ramp-up plan. The goal is to capture **what actually changed in understanding** — not a list of facts, but the mental model shifts, the "aha" moments, and the places where things are still unclear.
-
-Structure: cognitive shifts first, then architecture logic, then hands-on commands, then honest gaps. Written from an engineering perspective, assuming the reader already has some background and wants to understand the *why* behind each concept rather than just the *what*.
-
-Use this file when you want to review what the learning phase produced — what stuck, what the key insights were, and what still needs follow-up.
-
-### Week1-2QuickStart手册.md
+### Week-x-y QuickStart手册.md
 
 A structured reference guide organized around the six topic blocks of the Week 1-2 ramp-up plan. The goal is to give you **everything you need to get oriented quickly** — core mental models, key numbers, command references, external links, and pointers to deeper reading — all in one place.
 
 Structure: each block has a target outcome, a minimal mental model, the most important commands or concepts, and links to source materials and supplementary notes. Designed to be scanned, not read linearly.
 
 Use this file when you are actively working through Week 1-2 and need a map of what to read, watch, and run — or when you need to quickly look something up without digging through multiple documents.
+
+### Week-x-y 学习总结.md
+
+A retrospective written after completing Week 1-2 of the ramp-up plan. The goal is to capture **what actually changed in understanding** — not a list of facts, but the mental model shifts, the "aha" moments, and the places where things are still unclear.
+
+Structure: cognitive shifts first, then architecture logic, then hands-on commands, then honest gaps. Written from an engineering perspective, assuming the reader already has some background and wants to understand the *why* behind each concept rather than just the *what*.
+
+Use this file when you want to review what the learning phase produced — what stuck, what the key insights were, and what still needs follow-up.
 
 ---
 
