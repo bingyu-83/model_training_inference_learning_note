@@ -210,6 +210,9 @@ PP（流水线并行）
 - [[MLOPS/GPU/02-GPU通信与网络/NCCL-Case-Complete|NCCL Case Complete]] — NCCL 实战案例
 - [[MLOPS/GPU/02-GPU通信与网络/为什么模型并行策略会决定网络压力|为什么模型并行策略会决定网络压力]] — 并行策略与 NCCL 通信的关系
 - [[MLOPS/GPU/02-GPU通信与网络/大模型训练和推理中的DPTPPPEP理解|大模型训练和推理中的 DP TP PP EP 理解]] — 并行策略与 NCCL 原语的对应关系
+- [[MLOPS/GPU/02-GPU通信与网络/NCCL从张量并行到MoE通信到底发生在哪|NCCL 从张量并行到 MoE，通信到底发生在哪]] — 推理场景下 NCCL 的位置：TP/PP/MoE 通信形态对比
+
+---
 
 ---
 
@@ -275,8 +278,19 @@ PagedAttention：把 KV Cache 从"提前分配一大块连续显存"改成"按�
 - 显存利用率：20-40% → 96%+
 - 原理类比：操作系统的虚拟内存分页
 
+RadixAttention（SGLang）：跨请求复用 KV Cache
+- 用前缀树索引已缓存的 KV，新请求先做最长前缀匹配，命中部分直接复用
+- 前缀重叠高时（Agent/RAG/多轮对话）TTFT 快 4-6x
+- 前缀完全独立时无收益，vLLM 更合适
+
+**选型口诀：请求之间有共享前缀 → SGLang；请求完全独立 → vLLM**
+
 **🔗 视频：**
 - [GPU MODE Lecture 12: Flash Attention](https://www.youtube.com/watch?v=l8pRSuU81PU)（Attention 优化核心，理解 LLM 训练/推理性能）
+
+**📚 库内辅助文档：**
+- [[MLOPS/GPU/03-LLM推理优化/vLLMvsSGLang深度技术对比|vLLM vs SGLang 深度技术对比]] — 架构差异、选型决策指南、性能基准数据
+- [[MLOPS/GPU/03-LLM推理优化/从PagedAttention到RadixAttentionLLM推理加速的两条路线|从 PagedAttention 到 RadixAttention：LLM 推理加速的两条路线]] — 两种技术的原理对比与适用场景
 
 ---
 

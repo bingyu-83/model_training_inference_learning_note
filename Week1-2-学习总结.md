@@ -22,8 +22,6 @@ cssclasses: [max]
 
 **HBM 带宽比算力更稀缺。** H100 的 FP16 算力是 990 TFLOPS，但 HBM 带宽只有 3.35 TB/s。一个简单的矩阵乘法，理论上需要的带宽远超实际可用带宽，这就是为什么大多数 kernel 是 memory-bound 而不是 compute-bound。Roofline 模型把这个关系说得很清楚——拐点左边优化内存访问，拐点右边才轮到优化算法。
 
-> 📎 深度展开：[Sidenote — HBM 带宽与 Roofline 模型](./Sidenote-HBM带宽与Roofline模型.md)（含算术强度推导、拐点计算、Kernel Fusion 原理、Flash Attention 分析，以及[交互式 Roofline 可视化](./roofline-visualization.html)）
-
 **NVLink 和 PCIe 的差距不是量变是质变。** H100 的 NVLink 4 是 900 GB/s，PCIe Gen5 是 64 GB/s，差了 14 倍。这不只是数字，它意味着 TP（张量并行）必须在节点内做，跨节点做 TP 在工程上几乎不可行，因为延迟和带宽都撑不住。这个认知直接影响了我对并行策略选择的理解。
 
 **Fabric Manager 是一个容易被忽视的单点故障。** 它是用户空间的守护进程，不是内核驱动。`nvidia-smi` 能正常跑不代表 NVSwitch 已经初始化。见过一个典型场景：节点重启后 Fabric Manager 没有自动启动，`nvidia-smi` 显示 8 张卡全部正常，但 NCCL 跑出来的 busbw 只有 3 GB/s，因为通信全部 fallback 到 TCP 了。这种问题如果不知道 Fabric Manager 的存在，排查方向会完全跑偏。
@@ -83,6 +81,10 @@ Ring AllReduce 和 Tree AllReduce 的选择逻辑也值得记住：Ring 适合�
 
 这个对应关系直接决定了并行策略的选择边界：**TP 的 degree 不能超过单节点的 GPU 数量**，因为跨节点的 NVLink 不存在，走网络的 TP 通信开销会把收益全部吃掉。
 
+**推理里的 NCCL 和训练不一样。** 训练时 NCCL 最典型的位置是反向传播后的梯度 AllReduce，是后台任务。推理时 NCCL 在前向关键路径上——Tensor Parallel 的 AllReduce/AllGather 不完成，下一层就不能继续；MoE 的 token dispatch 不完成，专家就没法开始算。这意味着推理里的 NCCL 延迟直接影响 TTFT 和每 token latency，不是训练那种"慢一点无所谓"的后台同步。
+
+MoE 的通信形态尤其值得单独记：每个 token 被路由到不同专家，专家可能分布在不同 GPU 上，通信模式是 token dispatch（发到专家所在 GPU）+ token combine（专家算完聚合回来），本质是 All-to-All。这和 dense 模型的 AllReduce 完全不同，而且通信量随路由结果动态变化，热点专家会造成不均衡。
+
 ---
 
 ## 五、GCP 特有的东西：网络栈的差异
@@ -133,7 +135,21 @@ nvidia-smi nvlink -e
 
 ---
 
-## 七、还没搞清楚的地方
+## 七、KV Cache 与推理框架：两条优化路线
+
+理解 KV Cache 之后，vLLM 和 SGLang 的差异就变得很清晰——它们解决的是两个不同层次的问题。
+
+**PagedAttention（vLLM）解决的是单请求内的显存碎片。** 传统做法按 max_seq_len 预分配连续显存，实际用不满就浪费。PagedAttention 借鉴操作系统分页，把 KV Cache 切成固定大小的 block（16 或 32 个 token），按需分配，显存利用率从 60% 提升到 96%+。请求结束后 block 立即释放，没有跨请求的状态保留。
+
+**RadixAttention（SGLang）解决的是跨请求的重复计算。** 多个请求共享相同前缀（system prompt、few-shot 示例、RAG 检索结果）时，PagedAttention 每次都重新计算这些前缀的 KV。RadixAttention 用前缀树（Radix Tree）把 KV Cache 持久化，新请求来了先做最长前缀匹配，命中的部分直接复用，只计算新增部分。前缀重叠 90% 以上时，TTFT 可以快 4-6 倍。
+
+选型逻辑很简单：**请求之间有大量共享前缀（Agent、RAG、多轮对话）→ SGLang；请求完全独立（批量翻译、内容审核）→ vLLM。** 两者不是竞争关系，解决的是不同瓶颈。
+
+**Kimi K3 的 MoE 架构也值得记一下。** 2.8T 参数、每次激活 104B，用的是 KDA（Kimi Delta Attention）+ Gated MLA 混合注意力，3:1 比例（69 KDA + 24 Gated MLA）。KDA 是线性注意力，把历史压缩进固定大小的状态，避免 KV Cache 随序列长度线性增长；MLA 定期回到完整上下文做精确检索。这个设计在 1M token 上下文下 KV Cache 占用减少 75%，解码吞吐是标准 attention 的 6 倍。MoE 部分 896 个专家每次激活 18 个，配合 Latent MoE 把专家 FLOPs 减少约一半。
+
+---
+
+## 八、还没搞清楚的地方
 
 诚实地记录下来，避免假装理解：
 
@@ -147,7 +163,7 @@ nvidia-smi nvlink -e
 
 ---
 
-## 八、一句话总结每个核心概念
+## 九、一句话总结每个核心概念
 
 | 概念 | 一句话本质 |
 |------|-----------|
@@ -165,3 +181,6 @@ nvidia-smi nvlink -e
 | Roofline | 判断 kernel 是 memory-bound 还是 compute-bound 的模型 |
 | Kernel Fusion | 把多个 kernel 合并，减少 HBM 读写次数 |
 | TCPDirect / TCPXO | GCP 的节点间网络协议，逐代减少 CPU 参与 |
+| PagedAttention | vLLM 的 KV Cache 分页管理，消除显存碎片，利用率 96%+ |
+| RadixAttention | SGLang 的跨请求 KV Cache 复用，前缀树索引，共享前缀场景快 4-6x |
+| MoE Token Dispatch | MoE 推理中 token 路由到专家的 All-to-All 通信，动态不均衡 |
