@@ -66,7 +66,7 @@ nccl-tests busbw > 600 GB/s → 通信路径正确走了 NVLink
 
 ---
 
-## 四、NCCL：不只是"通信库" `🆕 2026-07-31`
+## 四、NCCL：不只是"通信库"
 
 NCCL 的定位经常被低估。它不只是封装了几个通信原语的库，它做的事情是**在给定拓扑下自动选择最优传输路径和算法**。
 
@@ -82,7 +82,7 @@ Ring AllReduce 和 Tree AllReduce 的选择逻辑也值得记住：Ring 适合�
 
 这个对应关系直接决定了并行策略的选择边界：**TP 的 degree 不能超过单节点的 GPU 数量**，因为跨节点的 NVLink 不存在，走网络的 TP 通信开销会把收益全部吃掉。
 
-**推理里的 NCCL 和训练不一样。** 训练时 NCCL 最典型的位置是反向传播后的梯度 AllReduce，是后台任务。推理时 NCCL 在前向关键路径上——Tensor Parallel 的 AllReduce/AllGather 不完成，下一层就不能继续；MoE 的 token dispatch 不完成，专家就没法开始算。这意味着推理里的 NCCL 延迟直接影响 TTFT 和每 token latency，不是训练那种"慢一点无所谓"的后台同步。
+**推理里的 NCCL 和训练不一样。** `🆕 2026-07-31` 训练时 NCCL 最典型的位置是反向传播后的梯度 AllReduce，是后台任务。推理时 NCCL 在前向关键路径上——Tensor Parallel 的 AllReduce/AllGather 不完成，下一层就不能继续；MoE 的 token dispatch 不完成，专家就没法开始算。这意味着推理里的 NCCL 延迟直接影响 TTFT 和每 token latency，不是训练那种"慢一点无所谓"的后台同步。
 
 MoE 的通信形态尤其值得单独记：每个 token 被路由到不同专家，专家可能分布在不同 GPU 上，通信模式是 token dispatch（发到专家所在 GPU）+ token combine（专家算完聚合回来），本质是 All-to-All。这和 dense 模型的 AllReduce 完全不同，而且通信量随路由结果动态变化，热点专家会造成不均衡。
 
@@ -136,7 +136,9 @@ nvidia-smi nvlink -e
 
 ---
 
-## 七、KV Cache 与推理框架：两条优化路线 `🆕 2026-07-31`
+## 七、KV Cache 与推理框架：两条优化路线
+
+`🆕 2026-07-31 新增`
 
 理解 KV Cache 之后，vLLM 和 SGLang 的差异就变得很清晰——它们解决的是两个不同层次的问题。
 
